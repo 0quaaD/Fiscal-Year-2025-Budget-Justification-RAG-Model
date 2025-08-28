@@ -119,7 +119,7 @@ This will create the chroma/ folder for storing embeddings.
 ```bash
 python server.py --build
 ```
-**TODO** --> Access API docs (Swagger UI) at: [/docs](http://localhost:8000/docs)
+
 
 ## API Endpoints
 | Endpoint           | Method | Description                                                 |
@@ -131,3 +131,7 @@ python server.py --build
 | `/ask/batch`       | POST   | Ask multiple questions (max 10)                             |
 | `/search`          | POST   | Search similar documents without LLM                        |
 | `/docs`            | GET    | Documentation of API                                        |
+
+
+### TODO 
+1. Access API docs (Swagger UI) at: [/docs](http://localhost:8000/docs)
