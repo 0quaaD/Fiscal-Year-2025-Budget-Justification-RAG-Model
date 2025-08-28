@@ -265,3 +265,12 @@ and the result is like
 
 ### TODO 
 1. Create a webpage for the api
+
+
+---
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)**.  
+See the full license here: [GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.en.html)
+
