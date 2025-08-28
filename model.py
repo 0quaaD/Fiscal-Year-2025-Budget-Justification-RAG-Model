@@ -40,7 +40,7 @@ def text_splitter(docs: list[Document]):
         raise ValueError("No documents are provided for splitting.")
 
     text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size = 1000, 
+            chunk_size = 1000,
             chunk_overlap = 500,
             length_function = len,
             is_separator_regex = False,
@@ -56,7 +56,7 @@ def text_splitter(docs: list[Document]):
         print(f"Metadata Review: {document.metadata}")
     else:
         print("Not enough chunks to print chunk 10.")
-    
+
     return chunks
 
 def save_at_chroma(chunks: list[Document]):
@@ -65,7 +65,7 @@ def save_at_chroma(chunks: list[Document]):
 
     if os.path.exists(CHROMA):
         shutil.rmtree(CHROMA)
-    
+
     db = Chroma(
             embedding_function = embeddings,
             persist_directory = CHROMA
@@ -79,36 +79,70 @@ def save_at_chroma(chunks: list[Document]):
 
     print(f"Successfully saved {len(chunks)} chunks at {CHROMA}")
 
-def ask_questions(query_text):
-
+def ask_numerical_questions(query_text):
     if not query_text.strip():
         return "Please provide a valid question."
-    
     if not os.path.exists(CHROMA):
         return "Database not found! Please run with '--build' option first."
 
     try:
-        # Initialize components
+        db = Chroma(persist_directory = CHROMA, embedding_function = embeddings)
+        semantic_res = db.similarity_search(query_text, k=3)
+        numerical_keywords = ['budget', 'million', 'billion', 'dollar', '$', '%', 'funding', 'allocation']
+        keyword_queries = [kw for kw in numerical_keywords if kw.lower() in query_text.lower()]
+
+        keyword_res = []
+        for key in keyword_queries[:2]:
+            keyword_res.extend(db.similarity_search(key, k=2))
+
+        all_res = semantic_res + keyword_res
+        seen_content = set()
+        unique_res = []
+        for doc in all_res:
+            if doc.page_content[:100] not in seen_content:
+                unique_res.append(doc)
+                seen_content.add(doc.page_content[:100])
+
+        if not unique_res:
+            return 'No relevant numerical data found for your query.'
+
+        response = f"QUERY: {query_text}\n\nRELEVANT NUMERICAL DATA FOUND:\n\n"
+
+        for i,doc in enumerate(unique_res[:5]):
+            response += f"--- Result {i+1} (Source: {doc.metadata.get('source', 'Unknown')}) ---\n"
+            response += f"{doc.page_content}\n\n"
+
+        return response
+
+    except Exception as e:
+        return f"Error occured while processing numerical query: {str(e)}"
+
+async def ask_questions(query_text):
+
+    if not query_text.strip():
+        return "Please provide a valid question."
+
+    if not os.path.exists(CHROMA):
+        return "Database not found! Please run with '--build' option first."
+
+    try:
         db = Chroma(persist_directory=CHROMA, embedding_function=embeddings)
-        retriever = db.as_retriever(search_kwargs={'k': 20})  # Match your k=20
+        retriever = db.as_retriever(search_kwargs={'k': 20})
         llm = ChatOllama(model='llama3.2:3b', temperature=0.1)
 
-        # Create the chain - CORRECT way
         qa_chain = RetrievalQAWithSourcesChain.from_chain_type(
             llm=llm,
             chain_type="stuff",
             retriever=retriever,
             return_source_documents=True
         )
-        
-        # Execute the chain - CORRECT way
+
         response = qa_chain.invoke({"question": query_text})
-        
-        # Format the response nicely
+
         answer = response.get('answer', 'No answer found')
         sources = response.get('sources', 'No sources')
         source_docs = response.get('source_documents', [])
-        
+
         formatted_response = f"""
 ANSWER:
 {answer}
@@ -118,36 +152,32 @@ SOURCES:
 
 RELEVANT EXCERPTS:
 """
-        formatted_response_ = """
-
-You are an assistant that extracts **specific funding amounts** from the context.  
-Question: {question}  
-If you find the funding request, respond ONLY with the number and its unit (e.g., "$12 million").  
-If no number is present, say: "Not found in the provided context."  
-Context: {context}
-"""        
-        # Add relevant excerpts for verification
-        for i, doc in enumerate(source_docs[:3]):  # Show top 3 source documents
+        for i, doc in enumerate(source_docs[:3]):
             formatted_response += f"\n--- Source {i+1} ({doc.metadata.get('source', 'Unknown')}) ---\n"
             formatted_response += doc.page_content[:400] + "...\n"
-        
+
         return formatted_response
-    
+
     except Exception as e:
         return f"Error occurred while processing question: {str(e)}"
+
 def main():
     parser = argparse.ArgumentParser(description="RAG system for Fiscal year 2025 justification of Department of Energy Q&A")
     parser.add_argument('--build', action='store_true', help='Build the vector database')
+    parser.add_argument('--num', type = str, help = "Ask numerical/budget questions with enhanced retrieval")
     parser.add_argument('--ask', type=str, help='Ask a question (with LLM answer)')
     parser.add_argument('--query', type=str, help='Query database for similar documents (no LLM)')
 
     args = parser.parse_args()
-    
+
     if args.build:
         asyncio.run(build_database())
+    elif args.num:
+        response = ask_numerical_questions(args.num)
+        print(response)
     elif args.ask:
         response =  ask_questions(args.ask)
-        print(response) 
+        print(response)
     elif args.query:
         query_database(args.query)
     else:
@@ -157,7 +187,7 @@ def query_database(query_text):
     if not query_text.strip():
         print("Please provide a valid query.")
         return
-    
+
     if not os.path.exists(CHROMA):
         print("Database not found! Please run with '--build' first.")
         return
@@ -169,7 +199,7 @@ def query_database(query_text):
         if len(res) == 0:
             print('Unable to find any matches!')
             return
-        
+
         print(f"Found {len(res)} relevant documents.")
         context_text = "\n\n---\n\n".join([docs.page_content for docs in res])
         print(context_text)
