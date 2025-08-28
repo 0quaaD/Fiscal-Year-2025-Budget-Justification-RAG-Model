@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 import uvicorn
 from contextlib import asynccontextmanager
-
+from fastapi.responses import JSONResponse
 from model import (
         build_database,
         ask_questions,
@@ -45,6 +45,7 @@ class QuestionRequest(BaseModel):
 
 class BatchQuestionRequest(BaseModel):
     questions: List[str]
+    type: Optional[str] = "standard"
 
 class SearchRequest(BaseModel):
     query: str
@@ -186,40 +187,101 @@ async def ask_question(request: QuestionRequest):
                 error = str(e)
         )
 
-@app.post('/ask/batch', response_model = BatchResponse)
+async def process_single_question(question: str, question_type: str = "standard"):
+    """Process a single question and return the result"""
+    try:
+        print(f"Processing question ({question_type}): {question}")
+
+        if question_type == "numerical":
+            result = ask_numerical_question(question)
+            parsed_result = {"raw_output": result}
+        elif question_type == "query":
+            result = query_database(question)
+            parsed_result = {"raw_output": result}
+        else:  # standard
+            result = await ask_questions(question)
+            # Try to parse structured response
+            try:
+                lines = result.split('\n')
+                answer = ""
+                sources = ""
+                excerpts = ""
+                current_section = ""
+
+                for line in lines:
+                    if line.startswith('ANSWER:'):
+                        current_section = 'answer'
+                        continue
+                    elif line.startswith('SOURCES:'):
+                        current_section = 'sources'
+                        continue
+                    elif line.startswith('RELEVANT EXCERPTS:'):
+                        current_section = 'excerpts'
+                        continue
+
+                    if current_section == 'answer':
+                        answer += line + '\n'
+                    elif current_section == 'sources':
+                        sources += line + '\n'
+                    elif current_section == 'excerpts':
+                        excerpts += line + '\n'
+
+                parsed_result = {
+                    "answer": answer.strip(),
+                    "sources": sources.strip(),
+                    "excerpts": excerpts.strip()
+                }
+            except Exception as parse_error:
+                print(f"Failed to parse result, using raw output: {parse_error}")
+                parsed_result = {"raw_output": result}
+
+        return {
+            "question": question,
+            "success": True,
+            "result": parsed_result,
+            "type": question_type
+        }
+    except Exception as e:
+        print(f"Error processing question '{question}': {str(e)}")
+        return {
+            "question": question,
+            "success": False,
+            "error": str(e),
+            "type": question_type
+        }
+
+@app.post("/ask/batch", response_model=BatchResponse)
 async def ask_batch_questions(request: BatchQuestionRequest):
+    """Process multiple questions in batch"""
     if not rag_system_ready:
-        raise HTTPException(status_code=500, detail = "RAG system not ready. Build database first.")
+        raise HTTPException(status_code=503, detail="RAG system not ready. Build database first.")
 
     if not request.questions or len(request.questions) == 0:
-        raise HTTPException(status_code = 400, detail = "Questions array cannot be empty.")
+        raise HTTPException(status_code=400, detail="Questions array cannot be empty")
 
     if len(request.questions) > 10:
-        raise HTTPException(status_code = 400, detail = 'Max 10 questions allowed per batch')
+        raise HTTPException(status_code=400, detail="Maximum 10 questions allowed per batch")
 
-    res = []
+    results = []
+    question_type = request.type or "standard"
+
+    print(f"Processing {len(request.questions)} questions with type: {question_type}")
+
     for i, question in enumerate(request.questions):
-        try:
-            print(f"Processing batch question {i+1}/{len(request.questions)}: {question}")
-            res.append({
-                "question": question,
-                "success": True,
-                "result": res
-            })
-        except Exception as e:
-            res.append({
-                "question": {},
-                "success": False,
-                "error": str(e)
-            })
+        print(f"Processing batch question {i + 1}/{len(request.questions)}")
+        result = await process_single_question(question, question_type)
+        results.append(result)
+        print(f"Completed question {i + 1}, success: {result.get('success', False)}")
 
-    return BatchResponse(
-            success = True,
-            total_questions = len(request.questions),
-            results = res,
-            timestamp = datetime.now().isoformat()
+    response = BatchResponse(
+        success=True,
+        total_questions=len(request.questions),
+        results=results,
+        timestamp=datetime.now().isoformat()
     )
 
+    print(f"Batch processing complete. Returning {len(results)} results")
+    return response
 @app.post('/search')
 async def search_documents(request: SearchRequest):
     if not rag_system_ready:
