@@ -193,7 +193,7 @@ def query_database(query_text):
         return
 
     try:
-        db = Chroma(persist_directory = CHROMA, embedding_function = embedding)
+        db = Chroma(persist_directory = CHROMA, embedding_function = embeddings)
 
         res = db.similarity_search(query_text, k=3)
         if len(res) == 0:
@@ -202,10 +202,10 @@ def query_database(query_text):
 
         print(f"Found {len(res)} relevant documents.")
         context_text = "\n\n---\n\n".join([docs.page_content for docs in res])
-        print(context_text)
+        return context_text
 
     except Exception as e:
-        print(f"Error occured while querying the database: {str(e)}")
+        return f"Error occured while querying the database: {str(e)}"
 
 async def build_database():
     try:

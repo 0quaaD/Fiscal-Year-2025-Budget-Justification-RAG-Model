@@ -15,30 +15,6 @@ from model import (
         CHROMA
 )
 
-rag_system_ready = False
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global rag_system_ready
-    try:
-        if os.path.exists(CHROMA):
-            rag_system_ready = True
-            print("RAG system is ready - database found.")
-        else:
-            print("RAG system starting - database not found, run /database/build first")
-        yield
-    except Exception as e:
-        print(f"Error initializing RAG system: {str(e)}")
-    finally:
-        print("Shutting down server...")
-
-app = FastAPI(
-        title = "RAG API server",
-        description = "REST API for Retrieval Augmented Generation System",
-        version="1.0.0",
-        lifespan = lifespan
-)
-
 class QuestionRequest(BaseModel):
     question: str
     type: Optional[str] = "standard"
@@ -69,6 +45,29 @@ class DatabaseStatus(BaseModel):
     database_path: str
     stats: Optional[dict] = None
 
+rag_system_ready = False
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global rag_system_ready
+    try:
+        if os.path.exists(CHROMA):
+            rag_system_ready = True
+            print("RAG system is ready - database found.")
+        else:
+            print("RAG system starting - database not found, run /database/build first")
+        yield
+    except Exception as e:
+        print(f"Error initializing RAG system: {str(e)}")
+    finally:
+        print("Shutting down server...")
+
+app = FastAPI(
+        title = "RAG API server",
+        description = "REST API for Retrieval Augmented Generation System",
+        version="1.0.0",
+        lifespan = lifespan
+)
 
 @app.get('/health')
 async def health_check():
@@ -193,7 +192,7 @@ async def process_single_question(question: str, question_type: str = "standard"
         print(f"Processing question ({question_type}): {question}")
 
         if question_type == "numerical":
-            result = ask_numerical_question(question)
+            result = ask_numerical_questions(question)
             parsed_result = {"raw_output": result}
         elif question_type == "query":
             result = query_database(question)
@@ -282,6 +281,7 @@ async def ask_batch_questions(request: BatchQuestionRequest):
 
     print(f"Batch processing complete. Returning {len(results)} results")
     return response
+
 @app.post('/search')
 async def search_documents(request: SearchRequest):
     if not rag_system_ready:
