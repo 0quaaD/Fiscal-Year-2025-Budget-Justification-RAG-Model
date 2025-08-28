@@ -1,6 +1,6 @@
 # RAG API Server
 
-A **Retrieval-Augmented Generation (RAG) system** for querying the U.S. Department of Energy FY 2025 budget using PDF documents. 
+A **Retrieval-Augmented Generation (RAG) system** for querying the U.S. Department of Energy FY 2025 budget as a real world example data by using PDF formatted documents. 
 Built with **LangChain**, **Chroma**, and **FastAPI**, it allows asking questions and retrieving numerical or contextual answers from documents.
 
 
